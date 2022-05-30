@@ -1,0 +1,971 @@
+---
+title: "EDAFINALPROJECTAKSHAYA"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+
+
+
+CODE:
+
+```{r}
+gamelog = read.csv("Downloads/Gamelog T20I Stat 847.csv")
+head(gamelog, n=3)
+```
+
+```{r}
+dim(gamelog)
+length(unique(gamelog$MatchNo))
+```
+We can infer that there are 688 matches and 21 teams belonging to either IPL or T20I League.
+
+
+```{r}
+#structure of the dataset
+str(gamelog)
+```
+
+```{r echo=FALSE}
+library(dplyr)   
+library(readr) 
+library(sqldf)
+library(ggplot2) 
+library(ggthemes)
+library(treemap)
+library(RColorBrewer)
+library(tidyr)
+```
+
+DATA CLEANING:
+
+STEP 1: Remove duplicated rows and retain only the distinct/unique rows in the gamelog dataframe.
+
+```{r}
+gamelog_distinct <- gamelog %>% distinct()
+```
+
+STEP 2: Handling missing data:
+
+We find that 8304 BowlerID, 9787 BatsmanID, 149055 FielderID and 12 NumOutcome are missing. The FielderID's are missing for a reason i.e. there might not have been a fielder present at that point in the game, so they are missing. Therefore, we do not drop the NA's in FielderID. We also retain the missing rows in BowlerID and BatsmanID columns which are missing completely at random, in order to not lose too much data in the process and since we won't be using them much for our analysis. We drop the 12 NumOutcome NA values.
+
+```{r}
+head(summary(gamelog_distinct))
+head(gamelog_distinct %>% drop_na(NumOutcome))
+which(is.na(gamelog_distinct$Outcome))
+```
+
+STEP 3: Dropping matches having more than 20 wickets and total_runs greater than 1000.
+```{r}
+
+
+
+head(gamelog_distinct %>% 
+group_by(MatchNo) %>% 
+summarise(total_runs = sum(NumOutcome)) %>% 
+arrange(desc(total_runs)) )
+
+gamelog_distinct  <-filter(gamelog_distinct,  MatchNo!= 201558)
+gamelog_distinct  <-filter(gamelog_distinct,  MatchNo!= 200901)
+
+
+gamelog_distinct <-gamelog_distinct  %>%  mutate(Wicket_w = Wickets - lag(Wickets))
+
+p<-gamelog_distinct %>% group_by(MatchNo)  %>% summarise(total_wickets= sum(pmax(Wicket_w,0)))
+filter(p, total_wickets>20)
+
+gamelog_distinct  <-filter(gamelog_distinct,  MatchNo!= 200921)
+
+
+```
+We observe that MatchNo 201558 and 200901 have total_runs >1000 which is quite impossible in a T20 match format, so we drop them. We also observe that MatchNo 200921 has more than 24 wickets so we drop it as well. 
+
+
+## QUESTION 1: Make summary statistics
+```{r}
+filter_gamelog <- function(gamelog_df, over, w) {
+  filter(gamelog_df, Over == (over - 1), Wickets == (w - 1), Format == "T20I")
+}
+```
+
+## QUESTION 1: PLOT1 - Heatmap representing the chance of getting a wide ball in the T20I League game situation:
+```{r}
+p6df <- gamelog_distinct %>% filter(Format == "T20I") %>% group_by(Over, Wickets) %>% summarise(p = length(which(BallType=="wide")) / n())
+
+ggplot(p6df, aes(x = Over, y = Wickets, fill = p)) + geom_tile() + scale_fill_gradient(low ="blue", high = "yellow", na.value="white") + labs(title="Chance of a wide ball (extra-one run) by T20I League game situation", x = "Over", y = "Wicket")+scale_x_continuous(breaks= seq(0,19,by=1))+ scale_y_continuous(breaks= seq(0,9,by=1))
+
+```
+
+We can observe that the probability of getting a wide is high in the 1st,11th,13th overs and in the 3rd,8th wickets. The probability of bowling a wide ball is very low in the first and last few wickets (9th) and in the last 5 overs mainly because the best bowlers are usually involved in the last few overs in order to control the runs scored by the team batting in the second inning.
+
+```{r}
+#Replacing the -1 in gamelog with 0 to calculate total number of runs 
+gamelog_distinct_copy <- gamelog_distinct
+
+gamelog_distinct_copy["NumOutcome"][gamelog_distinct_copy["NumOutcome"] == -1] <- 0
+
+
+```
+
+### No of sixes, fours, ones, twos  threes and fours obtained in overall by each of the teams over the years:
+
+```{r}
+library("sqldf")
+NumOutcome <- gamelog_distinct_copy %>% 
+  select(TeamBatting ,NumOutcome) %>%
+  filter(NumOutcome %in% c(6,4,3,2,1,5,7))
+
+sixes <- sqldf("select TeamBatting as Team_batting , count(NumOutcome) as no_of_sixes from gamelog_distinct_copy
+      where NumOutcome = 6 group by TeamBatting")
+
+
+
+fours <- sqldf("select TeamBatting as Team_batting , count(NumOutcome) as no_of_fours from gamelog_distinct_copy 
+      where NumOutcome = 4 group by TeamBatting")
+
+
+
+threes <- sqldf("select TeamBatting as Team_batting , count(NumOutcome) as no_of_threes from gamelog_distinct_copy 
+      where NumOutcome = 3 group by TeamBatting")
+
+
+
+twos <- sqldf("select TeamBatting as Team_batting , count(NumOutcome) as no_of_twos from gamelog_distinct_copy 
+      where NumOutcome = 2 group by TeamBatting")
+
+
+ones <- sqldf("select  TeamBatting as Team_batting , count(NumOutcome) as no_of_ones from gamelog_distinct_copy 
+      where NumOutcome = 1 group by TeamBatting")
+
+
+zeros <- sqldf("select TeamBatting as Team_batting , count(NumOutcome) as no_of_zeros from gamelog_distinct_copy 
+      where NumOutcome = 0 group by TeamBatting")
+
+
+sevens <- sqldf("select TeamBatting as Team_batting , count(NumOutcome) as no_of_sevens from gamelog_distinct_copy 
+      where NumOutcome = 7 group by TeamBatting")
+
+
+fives <- sqldf("select TeamBatting as Team_batting,count(NumOutcome) as no_of_fives from gamelog_distinct_copy 
+      where NumOutcome = 5 group by TeamBatting")
+
+
+wickets <- sqldf("select  TeamBatting as Team_batting , count(NumOutcome) as wickets_out from gamelog_distinct_copy where NumOutcome = -1 group by TeamBatting")
+
+
+
+
+Runs_combined <- sqldf("select sixes.Team_batting ,
+                           sixes.no_of_sixes,
+                           fours.no_of_fours,
+                           threes.no_of_threes,
+                           twos.no_of_twos,
+                           ones.no_of_ones from sixes
+                           inner join fours
+                           on sixes.Team_batting = fours.Team_batting
+                           inner join threes 
+                           on sixes.Team_batting = threes.Team_batting
+                           inner join twos
+                           on sixes.Team_batting = twos.Team_batting
+                           inner join ones 
+                           on sixes.Team_batting = ones.Team_batting ")
+
+head(Runs_combined)
+
+
+```
+
+
+
+```{r}
+matches_played <- sqldf("select TeamBatting as Team_batting, TeamBowling as Team_Bowling, MatchNo  from gamelog_distinct_copy
+       group by MatchNo")
+
+
+matches_played <- sqldf("select Batsman, sum(NumOutcome) from gamelog_distinct_copy 
+       group by Batsman")
+head(matches_played)
+
+
+
+
+```
+
+```{r}
+##TOP BATSMEN
+tb <-  gamelog_distinct_copy %>%  
+      group_by(Batsman) %>% 
+      summarise(runs = sum(NumOutcome)) %>%
+      arrange(-runs) %>% 
+      mutate(Batsman = factor(Batsman , levels = Batsman)) %>%      # this will arrange bar graph in ascending order 
+      filter(runs >= 3000)
+
+df2 <- tb %>% slice(-c(2))
+head(df2)
+
+```
+## QUESTION 1: PLOT2 - Comparison of the frequency of different types of shots played by the top 7 batsmen who have scored the most number of runs overall in T20 and IPL 
+```{r}
+#TYPES OF RUNS SCORED (NUMBER OF 4s,6s,3s,2s,and 1s)  ACROSS TOP 10 BATSMAN AND TOTAL RUNS SCORED BY THEM 
+runs_by_best_batsman <- gamelog_distinct_copy %>% 
+       select(Batsman, NumOutcome) %>%
+       filter(NumOutcome %in% c(6,4,3,2,1) & Batsman %in% 
+           c("CH Gayle",
+             "BB McCullum",
+             "V Kohli",
+             "SK Raina",
+             "AB de Villiers",
+             "G Gambhir",
+             "DA Warner",
+             "RG Sharma",
+             "JP Duminy",
+             "MS Dhoni")) 
+    
+b_sixes <- sqldf("select Batsman  , count(NumOutcome) as Sixes from runs_by_best_batsman 
+      where NumOutcome = 6 group by Batsman")
+
+
+b_fours <- sqldf("select Batsman  , count(NumOutcome) as Fours from runs_by_best_batsman 
+      where NumOutcome = 4 group by Batsman")
+
+
+b_threes <- sqldf("select Batsman , count(NumOutcome) as Threes from runs_by_best_batsman 
+      where NumOutcome = 3 group by Batsman")
+
+
+b_twos <- sqldf("select Batsman , count(NumOutcome) as Twos from runs_by_best_batsman 
+      where NumOutcome = 2 group by Batsman")
+
+
+b_ones <- sqldf("select Batsman  , count(NumOutcome) as Ones from runs_by_best_batsman 
+      where NumOutcome = 1 group by Batsman")
+
+
+
+Runs_Type_Batsmen <- sqldf("select b_sixes.Batsman ,
+                           b_sixes.Sixes,
+                           b_fours.Fours,
+                           b_threes.Threes,
+                           b_twos.Twos,
+                           b_ones.Ones from b_sixes
+                           inner join b_fours
+                           on b_sixes.Batsman = b_fours.Batsman
+                           inner join b_threes 
+                           on b_sixes.Batsman = b_threes.Batsman
+                           inner join b_twos
+                           on b_sixes.Batsman = b_twos.Batsman
+                           inner join b_ones 
+                           on b_sixes.Batsman = b_ones.Batsman
+                           "
+                           )
+merged<- merge(df2,Runs_Type_Batsmen, by ="Batsman")
+head(merged)
+
+library(reshape)
+melt(merged) %>% 
+              filter(variable %in% c("Sixes","Fours","Twos","Ones","Zeros")) %>% 
+                ggplot(aes(Batsman, value ,fill = variable))+
+                geom_bar(stat ="identity") +
+                labs(fill="Types of Run Scored",y="No of shots",x="Batsman",title ="Comparison of the frequency of different types of shots played by top batsman ")+
+                theme(axis.text.x = element_text(angle = 38, hjust = 1)) +
+                theme(legend.position="bottom")
+
+```
+From the barplot it is clear that Chris Gayle has scored the highest number of sixes overall, followed David Warner and SK Raina. Gautam Gambhir seems to have scored the highest number of fours in T20 cricket, followed by Chris Gayle and David Warner. We can also observe that Chris Gayle followed by SK Raina and Virat Kohil have scored the maximum number of runs overall.
+
+##QUESTION 1: PLOT3 - Heatmap representing the chance/ probability of hitting a dot ball
+
+```{r}
+# Show the chance of a no run
+defaultW <- getOption("warn") 
+options(warn = -1) 
+p0df <- gamelog_distinct %>% filter(Format == "T20I") %>% group_by(Over, Wickets) %>% summarise(p = sum(NumOutcome == 0) / n())
+ggplot(p0df, aes(x = Over, y = Wickets, fill = p)) + geom_tile() + scale_fill_gradient(low ="blue", high = "yellow", na.value="white") + labs(title="Chance of a no run by T20 game situation", x = "Over", y = "Wicket")+scale_x_continuous(breaks= seq(0,19,by=1))+ scale_y_continuous(breaks= seq(0,9,by=1))
+options(warn = defaultW)
+```
+
+We can see that the probability of hitting a dot ball is high on the 9th,7th,5th,2nd wickets and in the 11th,5th,3rd and 0th over. On the whole the probability of getting a dot ball seems quite high on the first 10 overs and seems to be nearly zero later on. The main reason for this pattern, could be because the bowlers in the first few overs are usually fast bowlers who are good at swinging a dot ball i.e. balls which are hard to hit or may result in a wicket easily. This is usually done in order to control the run rate. On the other hand, the probability of hitting a dot ball seems to very less in the last 4 overs. 
+
+```{r}
+runs_1 <-   gamelog_distinct_copy %>%  
+       group_by(MatchNo,TeamBatting) %>% 
+       summarise(runs = sum(NumOutcome)) %>%
+       filter(runs >= 200)
+
+dd <- sqldf(" select TeamBatting as Team, count(runs) as Scored_200_Plus from runs_1
+        group by  TeamBatting")
+
+runs_2 <-   gamelog_distinct_copy %>%  
+       group_by(MatchNo,TeamBatting) %>% 
+       summarise(runs = sum(NumOutcome)) %>%
+       filter(runs <= 100)
+
+
+a <- sqldf(" select TeamBatting as Team, count(runs) as Scored_Less_100 from runs_2
+               group by TeamBatting ") 
+
+
+runs_3 <- gamelog_distinct_copy %>%  
+      group_by(MatchNo,TeamBatting) %>% 
+      summarise(runs = sum(NumOutcome)) %>%
+      filter(runs %in% c(100:150))
+
+
+
+runs_4 <- gamelog_distinct_copy %>%  
+      group_by(MatchNo,TeamBatting) %>% 
+      summarise(runs = sum(NumOutcome)) %>%
+      filter(runs <=150 & runs >=100)
+
+
+
+b <- sqldf(" select TeamBatting as Team, count(runs) as Scored_bt_100_150 from runs_3
+               group by TeamBatting ")  
+
+runs_4 <- gamelog_distinct_copy %>%  
+      group_by(MatchNo,TeamBatting) %>% 
+      summarise(runs = sum(NumOutcome)) %>%
+      filter(runs %in% c(150:200))
+
+c <- sqldf(" select TeamBatting as Team, count(runs) as Scored_bt_150_200 from runs_4
+               group by TeamBatting ")  
+
+
+runs_5 <- gamelog_distinct_copy %>%  
+      group_by(MatchNo,TeamBatting, TeamBowling) %>% 
+      summarise(runs = sum(NumOutcome)) %>%
+      filter(runs >= 250)
+
+
+
+e <- sqldf(" select TeamBatting as Team, count(runs) as Scored_250_plus from runs_5
+               group by TeamBatting ")  
+
+score_table<- sqldf("select b.Team,
+              a.Scored_Less_100 ,
+              b.Scored_bt_100_150 ,
+              c.Scored_bt_150_200,
+              dd.Scored_200_Plus,
+              e.Scored_250_plus
+              from b 
+              left join a
+              on a.Team = b.Team 
+              left join c
+              on b.Team = c.Team 
+              left join dd
+              on b.Team = dd.Team 
+              left join e
+              on b.Team = e.Team")
+```
+
+## QUESTION 1: PLOT 4: Frequency of the different score ranges achieved by each team 
+
+```{r}
+#TEAM SCORES FREQUENCY ACROSS TEAMS AND HIGHEST SCORE ACHIEVED BY EACH TEAM
+melt(score_table) %>% 
+     filter(variable %in% c("Scored_Less_100","Scored_bt_100_150","Scored_bt_150_200","Scored_200_Plus","Scored_250_plus"))%>% 
+      ggplot(aes(Team,value,fill = variable))+
+      geom_bar(stat ="identity") + 
+      labs(x="Teams",y="Number of matches", title="Frequency of the different score ranges achieved by each team")
+      theme(axis.text.x = element_text(angle = 90, hjust = 1))
+      
+
+```
+
+We can observe that CSK, DC, KTK and PW has scored less than 100 only twice in IPL games while SouthAfrica has scored less than 100 10 times followed by NewZealand and Pakistan. KKR in IPL games and the Pakistan team in T20I League have scored between 100-150 the maximum number of times. CSK has scored the highest number of times (48), between 150 and 200 runs. 
+
+The Bangaldesh team seems to have never scored more than 200 while CSK in IPL games seems to have scored more than 200 and 250 the highest number of times compared to other teams. KXP also in IPL games seems to be the second best after CSK in the above stated score ranges.
+It is also important to note that while many teams have scored more than 250 in the IPL league, no team has scored more than 250 in the T20I cricket.
+
+## QUESTION 2: 
+
+### STEP 1: Computing valence scores
+
+1.Using nrc method :
+
+```{r cache=TRUE}
+library(stringr)
+library(syuzhet)
+library(sentimentr)
+second_innings <- gamelog_distinct %>% filter(Inning ==2)
+first_innings <- gamelog_distinct %>% filter(Inning ==1)
+s_v <- get_sentences(second_innings$FullNotes) 
+s_v<-unlist(as.character(s_v))
+
+nrc_data <- get_nrc_sentiment(s_v)
+
+angry_items <- which(nrc_data$anger > 0)
+head(angry_items)
+
+joy_items <- which(nrc_data$joy > 0)
+head(s_v[joy_items])
+
+
+anticipation_items <- which(nrc_data$anticipation > 0)
+head(s_v[anticipation_items])
+# head(pander::pandoc.table(nrc_data[, 1:8], split.table = Inf))
+# head(pander::pandoc.table(nrc_data[, 9:10]))
+valence <- (nrc_data[, 9]*-1) + nrc_data[, 10]
+head(valence,10)
+
+barplot(
+  sort(colSums(prop.table(nrc_data[, 1:8]))), 
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1, 
+  main = "Emotions in FullNotes Cricket Commentary", xlab="Percentage"
+  )
+
+```
+
+2. Using affin vector and nrc vector:
+
+```{r cache=TRUE}
+
+afinn_vector <- get_sentiment(s_v, method = "afinn")
+head(afinn_vector)
+nrc_vector <- get_sentiment(s_v, method = "nrc", lang = "english")
+head(nrc_vector)
+sum(nrc_vector)
+mean(nrc_vector)
+summary(nrc_vector)
+library(zoo)
+#Mean is near 0.13 which means most of the cricket commentaries made are neutral
+s_v_sentiment <- get_sentiment(s_v)
+plot(
+  s_v_sentiment, 
+  type="l", 
+  main="Example Plot Trajectory", 
+  xlab = "Narrative Time", 
+  ylab= "Emotional Valence"
+  )
+lines(zoo :: rollmean(s_v_sentiment,k=3,fill=NA),col="red",lwd=2)
+```
+We use the valence scores classifying the comments in FullNote as positive and negative by using the nrc_data and get_nrc_sentiment function i.e. Method 1.
+
+### Computing resources used and the excitement score:
+
+Excitement score has been computed as follows:
+
+$excitement score$ = $exp\left(\left|runs\:scored\:per\:ball\right|-\left(resources\:used\right)\cdot \left(target\:runs\:scored\:by\:the\:first\:team\right)+\left|valence\right|-\left|difference\:in\:required\:run\:rate\:and\:current\:run\:rate\right|\right)$
+
+```{r cache=TRUE}
+DLS = read.csv("Downloads/DLS_T20.csv")[,-1]
+DLS[16,2] =0.3
+DLS_matrix <- data.matrix(DLS)
+second_innings <- gamelog_distinct %>% filter(Inning ==2)
+over <- c(1:20)
+wickets <- c(0:9)
+resources_left_1= matrix(0, 21, 10)
+resources_used_1= matrix(0, 21, 10)
+
+for(i  in over)
+{
+for(j in wickets )
+{
+resources_left_1[i,j+1] = 5/6*(DLS_matrix[i,j+1]) + 1/6*(DLS_matrix[i+1,j+1])
+resources_used_1[i,j+1] <- DLS_matrix[i,j+1] - resources_left_1[i,j+1]
+}
+}
+
+colnames(resources_used_1) = c("0","1","2","3","4","5","6","7","8","9")
+library(reshape)
+resources_used_1 <- melt(resources_used_1)
+colnames(resources_used_1) = c("Over","Wickets","resources_used_value")
+resources_used_1$Ball <-1
+
+over <- c(1:20)
+wickets <- c(0:9)
+
+resources_left_2= matrix(0, 21, 10)
+resources_used_2= matrix(0, 21, 10)
+
+
+for(i  in over)
+{
+for(j in wickets )
+{
+resources_left_2[i,j+1] = 4/6*(DLS_matrix[i,j+1]) + 2/6*(DLS_matrix[i+1,j+1])
+resources_used_2[i,j+1] <- DLS_matrix[i,j+1] - resources_left_2[i,j+1]
+}
+}
+
+colnames(resources_used_2) = c("0","1","2","3","4","5","6","7","8","9")
+
+library(reshape)
+resources_used_2 <- melt(resources_used_2)
+colnames(resources_used_2) = c("Over","Wickets","resources_used_value")
+resources_used_2$Ball <-2
+
+
+over <- c(1:20)
+wickets <- c(0:9)
+resources_left_3= matrix(0, 21, 10)
+resources_used_3= matrix(0, 21, 10)
+
+
+for(i  in over)
+{
+for(j in wickets )
+{
+resources_left_3[i,j+1] = 3/6*(DLS_matrix[i,j+1]) + 3/6*(DLS_matrix[i+1,j+1])
+resources_used_3[i,j+1] <- DLS_matrix[i,j+1] - resources_left_3[i,j+1]
+}
+}
+
+colnames(resources_used_3) = c("0","1","2","3","4","5","6","7","8","9")
+
+library(reshape)
+resources_used_3 <- melt(resources_used_3)
+colnames(resources_used_3) = c("Over","Wickets","resources_used_value")
+resources_used_3$Ball <-3
+
+over <- c(1:20)
+wickets <- c(0:9)
+resources_left_4= matrix(0, 21, 10)
+resources_used_4= matrix(0, 21, 10)
+
+
+for(i  in over)
+{
+for(j in wickets )
+{
+resources_left_4[i,j+1] = 2/6*(DLS_matrix[i,j+1]) + 4/6*(DLS_matrix[i+1,j+1])
+resources_used_4[i,j+1] <- DLS_matrix[i,j+1] - resources_left_4[i,j+1]
+}
+}
+
+colnames(resources_used_4) = c("0","1","2","3","4","5","6","7","8","9")
+
+library(reshape)
+
+resources_used_4 <- melt(resources_used_4)
+
+
+colnames(resources_used_4) = c("Over","Wickets","resources_used_value")
+
+resources_used_4$Ball <-4
+
+over <- c(1:20)
+wickets <- c(0:9)
+
+resources_left_5= matrix(0, 21, 10)
+resources_used_5= matrix(0, 21, 10)
+
+for(i  in over)
+{
+for(j in wickets )
+{
+resources_left_5[i,j+1] = 1/6*(DLS_matrix[i,j+1]) + 5/6*(DLS_matrix[i+1,j+1])
+resources_used_5[i,j+1] <- DLS_matrix[i,j+1] - resources_left_4[i,j+1]
+}
+}
+
+colnames(resources_used_5) = c("0","1","2","3","4","5","6","7","8","9")
+library(reshape)
+
+resources_used_5 <- melt(resources_used_5)
+
+
+colnames(resources_used_5) = c("Over","Wickets","resources_used_value")
+
+resources_used_5$Ball <-5
+
+
+over <- c(1:20)
+wickets <- c(0:9)
+resources_left_6= matrix(0, 21, 10)
+resources_used_6= matrix(0, 21, 10)
+
+for(i  in over)
+{
+for(j in wickets )
+{
+resources_left_6[i,j+1] = 0*(DLS_matrix[i,j+1]) + 6/6*(DLS_matrix[i+1,j+1])
+resources_used_6[i,j+1] <- DLS_matrix[i,j+1] - resources_left_6[i,j+1]
+}
+}
+
+colnames(resources_used_6) = c("0","1","2","3","4","5","6","7","8","9")
+library(reshape)
+
+resources_used_6 <- melt(resources_used_6)
+colnames(resources_used_6) = c("Over","Wickets","resources_used_value")
+
+resources_used_6$Ball <-6
+
+#resources left merged df contains the resources used computed on a ball by ball basis
+resources_left_merged <- bind_rows(resources_used_1,resources_used_2,resources_used_3,resources_used_4,resources_used_5,resources_used_6)
+
+
+#Finding out the target runs for the second team
+Targets <- first_innings %>% select(MatchNo,NumOutcome)  %>% group_by(MatchNo) %>% summarise(total_runs = sum(pmax(NumOutcome,0)))
+Targets$Target_runs <- Targets$total_runs +1
+
+
+#Adding the targets column to second_innings data
+second_innings <- merge (second_innings, Targets, by = "MatchNo")
+
+#Finding runs that the second team falls behind from the target
+second_innings <- second_innings %>% group_by(MatchNo) %>%  mutate(cum_runs=cumsum(pmax(NumOutcome,0)))
+second_innings$runs_short <- second_innings$Target_runs - second_innings$cum_runs
+
+
+#Computing overs remaining and the required run rate by the second team to beat the target runs set by the first team
+second_innings$Overs_used = second_innings$Over + second_innings$Ball/6
+second_innings$Overs_remaining <- 20- second_innings$Overs_used
+second_innings$required_run_rate <- second_innings$runs_short / second_innings$Overs_remaining
+
+
+#Current run rate of the team playing in the second innings
+second_innings$current_run_rate <- second_innings$cum_runs / second_innings$Overs_used
+
+#How much the second team falls behind or ahead can be computed by finding out the difference between current run rate and required run rate -> this is indicated by lag_lead
+second_innings$lag_lead <- second_innings$current_run_rate - second_innings$required_run_rate
+second_innings$valence <- valence
+
+#Merging the resources used value with the seocnd inning df
+second_innings<-merge(second_innings, resources_left_merged, by=c("Over","Wickets","Ball")) 
+
+#filtering infinite values in laglead
+second_innings <- second_innings %>% filter( lag_lead > -Inf )
+second_innings <- second_innings %>% filter( lag_lead < Inf )
+
+#scale each of the variables used in computing the excitement score before using it for computation so that each variable is considered equally and equally contribute towards computation of the excitement score 
+second_innings$NumOutcome = scale(second_innings$NumOutcome)
+second_innings$resources_used_value = scale(second_innings$resources_used_value)
+second_innings$Target_runs = scale(second_innings$Target_runs)
+second_innings$valence = scale(second_innings$valence)
+second_innings$lag_lead = scale(second_innings$lag_lead)
+
+#computing the excitement score
+second_innings$excitement_score_computed <-exp(abs(pmax(second_innings$NumOutcome,0))-second_innings$resources_used_value*second_innings$Target_runs+abs(second_innings$valence)-abs(second_innings$lag_lead))
+second_innings$excitement_score_computed = scale(second_innings$excitement_score_computed )
+head(second_innings[order(second_innings$excitement_score_computed, decreasing = TRUE), ],25)
+
+```
+
+We can find out that we have got a diverse set of 20 balls and varying ball types( i.e. it has sixes, fours, outs, ones, legbyes, byes, runs, no ball etc) from the scaled excitement scores obtained above. 
+We can consider the ball in the 24th row which is a "no ball" to be a part of our highlight reel instead of the 20th ball present in the 20th row.
+
+## QUESTION 3: Kmeans clustering for total runs, total balls and total fours (similar to the one given in final project- additional guidance)
+```{r}
+
+library("plyr")
+library(qpcR)
+library("dplyr")
+```
+
+```{r}
+
+df_kmeans = ddply(gamelog3, "MatchNo", summarize,
+                  total_runs = sum( pmax(NumOutcome, 0)),
+                  total_sixes =  length(which(NumOutcome == 6)),
+                  total_fours =  length(which(NumOutcome == 4)),
+                  total_threes = length(which(NumOutcome == 3)),
+                  total_twos = length(which(NumOutcome == 2)),
+                  total_ones = length(which(NumOutcome == 1)),
+                  dot_balls = length(which(NumOutcome == 0)),
+                  runs_1stinning = sum(pmax(NumOutcome*1*(Inning == 1), 0)),
+                  runs_2ndinning = sum(pmax(NumOutcome*1*(Inning == 2), 0)),
+                  total_wickets = length(which(NumOutcome == -1) ),
+                  fielder_mentions = length(which(Fielder != "")),
+                  balls_until_1st_wicket = length(which(Wickets == 0)),
+                  average_wickets_in_during_match = mean(Wickets, na.rm=TRUE),
+                  total_balls = sum(pmax(length(BallType), 0))
+          )
+head(df_kmeans,2)
+
+df_kmeans <-drop_na(df_kmeans)
+
+#FINDING NUMBER OF BALLS IN SECOND INNING:
+second_innings <- gamelog_distinct %>% filter( Inning == 2 )
+second_inning_balls_df = ddply(second_innings, "MatchNo", summarize,
+                  balls_2nd_inning = sum(pmax(length(Ball), 0)))
+
+df_kmeans<-merge(df_kmeans,second_inning_balls_df,by = "MatchNo")
+
+
+#FINDING NUMBER OF BALLS IN FIRST INNING:
+first_innings <- gamelog_distinct %>% filter( Inning == 1 )
+first_inning_balls_df = ddply(first_innings, "MatchNo", summarize,
+                  balls_1st_inning = sum(pmax(length(Ball), 0)))
+
+df_kmeans<-merge(df_kmeans,first_inning_balls_df,by = "MatchNo")
+head(df_kmeans,2)
+
+
+#Standardizing the columns so that they are equally represented in proportion
+df_kmeans$total_runs_scaled = (df_kmeans$total_runs - mean(df_kmeans$total_runs)) / sd(df_kmeans$total_runs)
+df_kmeans$total_fours_scaled = (df_kmeans$total_fours - mean(df_kmeans$total_fours)) / sd(df_kmeans$total_fours)
+df_kmeans$total_balls_scaled = (df_kmeans$total_balls - mean(df_kmeans$total_balls)) / sd(df_kmeans$total_balls)
+
+
+```
+
+## Density plot showing the number of fours that made up the sum of the total runs scored by both teams
+
+```{r echo =FALSE}
+
+library(ggplot2)
+gr2 <- ggplot(df_kmeans, aes(x = total_runs,  y = total_fours)) +
+   geom_density2d_filled() +
+  xlab("total runs") +
+  ylab("total fours")
+  
+
+gr2_scaled <- ggplot(df_kmeans, aes(x = total_runs_scaled,  y = total_fours_scaled)) +
+   geom_density2d_filled() +
+  xlab("total runs") +
+  ylab("total fours")
+  
+```
+
+```{r, fig.height = 5}
+
+require(gridExtra)
+plot1 <-  gr2
+plot2 <- gr2_scaled
+grid.arrange(plot1, plot2, ncol=2,padding =2,nrow=2)
+
+```
+The above contour plot gives a clear picture of locations of high and low shot density clearly. The dominant (yellow) density location reveals that  matches where the total runs scored in both innings summed upto 270-320, had approximately 20-25 fours that contributed to the overall total score i.e. 20-25 is the number of fours scored together by both teams in that particular match. In matches which had a total score of 400, the number of fours scored seem to be around 40. Those matches which had 150- 200 total runs roughly had about 18 fours. Those matches having similar runs and fours.
+
+## Determining the optimal number of clusters required:
+
+METHOD 1: Elbow Plot (fviz_nbclust() function)
+
+```{r}
+library(factoextra)
+library(NbClust)
+
+
+df_selected = subset(df_kmeans, select = c(total_runs_scaled, total_fours_scaled, total_balls_scaled))
+
+wssd <- rep(NA,9)
+
+for(k in 2:10)
+{
+   selected_clust <- kmeans(df_selected, centers = k)
+   wssd[k-1] <- selected_clust$tot.withinss
+}
+
+centers <- 2:10
+dat <- data.frame(centers, wssd)
+ 
+gr3 <- ggplot(dat, aes(x=centers, y=wssd)) +
+        geom_line() + 
+        geom_point() +
+        xlab("number of clusters") +
+        ylab("WSSD")
+plot(gr3)
+
+
+
+
+```
+
+METHOD 2: Average Silhouette Method (fviz_nbclust() function)
+
+```{r}
+set.seed(12345)
+
+fviz_nbclust(df_selected, kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+```
+
+METHOD 3: Gap Statistic Method (fviz_nbclust() function)
+
+```{r}
+fviz_nbclust(df_selected, kmeans, nstart = 10,  method = "gap_stat", nboot = 25)+
+  labs(subtitle = "Gap statistic method")
+```
+
+
+METHOD 4: NbClust() function
+
+```{r}
+NbClust(data = df_selected, diss = NULL, distance ="euclidean",
+        min.nc = 2, max.nc = 15, method = "kmeans")
+```
+
+Therefore, 1.in elbow plot we find no of optimal clusters = 5
+           2.in Average Silhouette Method we find no of optimal clusters = 3
+           3.in Gap Statistic Method we find no of optimal clusters = 1
+Verifying above results using NbClust() method, we can conclude that 5 clusters are sufficient and optimal.
+By using majority rule, we can conclude that the optimal number of clusters required =5
+
+
+
+```{r}
+#RGB - RED(x-axis), GREEN(y-axis), BLUE(z-axis)
+library(scatterplot3d)
+scatterplot3d(df_kmeans[c(2,4,15)], pch=20, color=rainbow(5)[df$cluster])
+
+```
+
+```{r echo=FALSE}
+
+#df = df_kmeans[c(2,4,15)]
+df = df_kmeans[c(18,19,20)]
+df$cluster = factor(kmeans(df,5)$cluster)
+
+library(plotly)
+library(dplyr)
+p <- plot_ly(df, x=~total_runs_scaled, y=~total_fours_scaled, 
+z=~total_balls_scaled, color=~cluster) %>%
+     add_markers(size=1.5)
+p
+```
+The 3d plots below show how the five clusters look in the 3-d space. They have been plotted for both the standardized and unstandardized variables for better understanding.
+
+```{r pressure, echo=FALSE, fig.cap="A caption", out.width = '100%'}
+knitr::include_graphics("Downloads/newplot1.png")
+knitr::include_graphics("Downloads/newplot2.png")
+knitr::include_graphics("Downloads/newplot3.png")
+```
+
+
+## CLASSIFICATION OF THE CLUSTERS INTO MEANINGFUL ARCHETYPES:
+```{r}
+set.seed(12345) # For reproducibility
+selected_clust_5 <- kmeans(df_selected, centers = 5)
+selected_clust_5$centers
+```
+
+We can classify the 5 clusters as follows:
+1. CLUSTER 5: BOWLER DOMINATED MATCHES - The total runs, fours and balls are all negative i.e. lesser than those present on an average on most matches. This indicates that the bowlers must have been so good that the batters couldn't score many runs and were eventually out easily.
+2. CLUSTER 4: BATSMAN DOMINATED MATCHES (LONGEST RUNNING AND MOST EXCITING MATCHES) - These matches had the most number of balls bowled, hence "longest running matches" duration wise. They also had the highest number of runs overall as well as fours. This means that the batsmen who played in these matches were extremely good and it was difficult for the bowlers to take their wickets (make them out) or make them score lesser number of runs.
+3. CLUSTER 3: SHORTEST RUNNING MATCHES AND LEAST EXCITING - These matches have a very less count of runs and fours and balls played. This indicates that these might not have been close games and may have finished quite soon with the batsman getting out easily.
+4.CLUSTER 2: LOW RISK TAKING MATCHES BECAUSE OF BATSMEN PLAYING AT THE BACK FRONT - This cluster corresponds to matches having a low number of runs and fours, but having a good amount of balls bowled. This indicates that the batsman were playing at the back front and as a result were not able to score well and the bowlers weren't able to take a wicket that easily as well since the batsman did not risk hitting big runs.
+5. CLUSTER 1: REGULAR MATCHES: This cluster corresponds to those matches having an average number of total runs, fours and balls. No particular parttern can be found and seem to be normal matches having a resonable number of balls bowled and runs achieved.
+
+Visualising the 5 clusters, Total runs vs Total fours:
+```{r}
+fviz_cluster(selected_clust_5, data = df_selected,
+             palette = c("#2E9FDF", "#00AFBB", "#E7B800","#FF0000","#BEBADA"), 
+             geom = "point",
+             ellipse.type = "convex", 
+             ggtheme = theme_bw())
+```
+To visualize the scaled data, we need to understand that those matches (clusters) which have total runs and total fours lesser than the average have a negative value on the scale while those having number of total runs and fours higher than the average have a value greater than 0.
+
+
+## Plotting the cluster centres:
+
+```{r}
+df_selected =  subset(df_kmeans, select = c(total_runs, total_fours, total_balls))
+selected_clust_5 <- kmeans(df_selected, centers = 5)
+shot_centers <- as.data.frame(selected_clust_5$centers)
+gr4 <- gr2 + geom_point(data=shot_centers, aes(x=total_runs, y=total_fours),
+inherit.aes = FALSE, col="Red", size = 7, pch=as.character(1:5))
+plot(gr4)
+```
+## Mean squared distance:
+Computing the mean squared distance to get an idea about the relative amounts of diffusion and sizes of each of the 5 clusters for quality assurance, given that kmeans clustering is unsupervised.
+
+```{r}
+msd <- sqrt(selected_clust_5$withinss / selected_clust_5$size)
+print(msd)
+```
+
+## Relative sizes of each of the 5 clusters:
+
+```{r}
+print(selected_clust_5$size)
+```
+
+##QUESTION 4: Create your own Duckworth Lewis table for the gamelog dataset:
+
+We use only the first innings data to compute the DLS table as usually the DLS table is used to calculate the target score that the second team needs to achieve in order to win a limited overs match which stopped abruptly due to bad weather conditions or other circumstances.
+
+Over2 denotes the number of overs remaining after each subsequent ball within an over. The runs variable represent the sum of runs obtained for each ball bowled. The cum_runs variables is used as a tally variable which computes the score of the second team at that point of time.
+
+We have used optim() which is a generalized optimizer to find the minimum of the objective function. We take a 1 $cross$ 5 vector of zeros as our initial parameter. The loss function here acts as the fn parameter passed into optim() which initially takes in the input values from par and outputs the objective function. The maximum number of iterations is set to 200 and the method used is Nelder-Mead.
+
+```{r}
+first_innings <- gamelog_distinct %>% filter( Inning == 1 )
+first_innings[is.na(first_innings)] = 0
+first_innings$Over2 = first_innings$Over + first_innings$Ball/6
+first_innings$runs<- pmax(first_innings$NumOutcome, 0)
+#runs is NRuns
+library("dplyr")
+first_innings <- first_innings %>% group_by(MatchNo) %>%  mutate(cum_runs=cumsum(runs))
+#cumsum is NRunsTally
+
+first_innings$Over2square <- (first_innings$Over2)**2
+first_innings<-first_innings %>% group_by(MatchNo)  %>%  mutate(prop= cum_runs/sum(runs))
+
+loss_function = function(x, prop)
+{
+  A = x[1]
+  B = x[2]
+  C = x[3]
+  D = x[4]
+  E = x[5]
+  #G = x[6]
+  
+ prop_smooth = A*first_innings$Over2 + B*(first_innings$Wickets) + C*(first_innings$Over2square) + D*(log(first_innings$Over2square +1))+E
+ error = sum( (prop - prop_smooth)^2)
+  return(error)
+}
+
+
+
+best_params = optim(par=c(0,0,0,0,0), loss_function, prop = first_innings$prop, control= list(trace=1, maxit=200))$par
+A = best_params[1]
+B = best_params[2]
+C = best_params[3]
+D = best_params[4]
+E = best_params[5]
+
+
+print(A)
+print(B)
+print(C)
+print(D)
+print(E)
+
+#CREATING DLT TABLE:
+
+newDLT = matrix(NA, nrow=20, ncol=10)
+
+# Compute the matrix row by row, where each row is an over
+for(overcount in 0:20)
+{
+  # Apply the example formula. 1 - (formula) because resource = 1 - proportion.
+  newDLT[overcount,] = 1 -( A*overcount + B*(0:9) + C*overcount**2 + D*log(overcount**2+1)+E)
+}
+
+#rename the columns according to the original DLS table
+colnames(newDLT) = c("X0","X1","X2","X3","X4","X5","X6","X7","X8","X9")
+newDLT = round((newDLT - min(newDLT))/(max(newDLT)-min(newDLT)),3)
+head(newDLT)
+
+
+
+
+```
+## Final DLS table obtained:
+
+```{r}
+
+for(loopcount in 1:10)
+{
+
+temp = rbind(newDLT[2:20, ], rep(0, 10))
+newDLT = pmax(temp, newDLT)
+}
+rownames(newDLT) = c("20","19","18","17","16","15","14","13","12","11","10","9","8","7","6","5","4","3","2","1")
+newDLT
+
+
+```
+We can observe that the DLS table obtained for our dataset is correct as it starts from 1 and ends in 0 and the trend seems to be decreasing across the overs from top to bottom. Similarly, the values seem to be decreasing across the 10 wickets from 0 to 9. The only difference is that the original DLS tabel has a row of 0's attached at the end, which we have omitted in this case, therefore we get a 20 $cross$ 10 matrix.
+```{r}
+
+DLS
+
+```
